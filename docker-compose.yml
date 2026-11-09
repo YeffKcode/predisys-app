@@ -1,0 +1,28 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: predisys-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_pass
+      MYSQL_DATABASE: predisys
+      MYSQL_USER: predisys
+      MYSQL_PASSWORD: predisys_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - predisys_mysql:/var/lib/mysql
+
+  ml-service:
+    build: ./ml-service
+    container_name: predisys-ml
+    restart: unless-stopped
+    # Mismo .env que la API: un solo ML_SERVICE_TOKEN para ambos servicios
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ml-service/models:/srv/models:ro
+
+volumes:
+  predisys_mysql:
