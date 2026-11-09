@@ -1,0 +1,14 @@
+[
+  "function owner() view returns (address)",
+  "function totalRecords() view returns (uint256)",
+  "function writers(address) view returns (bool)",
+  "function setWriter(address writer, bool enabled)",
+  "function anchor(bytes32 alertId, bytes32 recordHash, string machineCode, uint16 probabilityBps, uint64 alertTimestamp)",
+  "function getRecord(bytes32 alertId) view returns (bytes32 recordHash, uint64 alertTimestamp, uint64 anchoredAt, uint16 probabilityBps, string machineCode, address submitter)",
+  "function isAnchored(bytes32 alertId, bytes32 recordHash) view returns (bool)",
+  "event AlertAnchored(bytes32 indexed alertId, bytes32 indexed recordHash, string machineCode, uint16 probabilityBps, uint64 alertTimestamp)",
+  "error NotOwner()",
+  "error NotWriter()",
+  "error AlreadyAnchored(bytes32 alertId)",
+  "error InvalidRecord()"
+]
