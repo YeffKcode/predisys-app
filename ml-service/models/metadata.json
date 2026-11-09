@@ -1,0 +1,180 @@
+{
+  "version": "20261028011936",
+  "trained_at": "2026-10-28T01:19:36.712658+00:00",
+  "window": 12,
+  "features": [
+    "temperature",
+    "power_kw",
+    "fan_rpm",
+    "hashrate",
+    "efficiency",
+    "rpm_per_deg",
+    "temp_slope",
+    "rpm_slope",
+    "power_slope",
+    "hash_slope",
+    "temp_std",
+    "rpm_std",
+    "power_std",
+    "hash_std",
+    "hash_drop_pct"
+  ],
+  "thresholds": {
+    "warning": 0.4,
+    "critical": 0.7
+  },
+  "dataset": {
+    "source": "synthetic",
+    "note": "Dataset sintético de desarrollo; reentrenar con dataset_predisys real.",
+    "rows": 50000,
+    "nodes": 25,
+    "failures": 24,
+    "precursor_rows": 3679,
+    "class_distribution": {
+      "NORMAL": 44352,
+      "PSU_INSTABILITY": 2036,
+      "GPU_DEGRADATION": 1068,
+      "THERMAL_PASTE": 1062,
+      "DUST_OBSTRUCTION": 969,
+      "FAN_WEAR": 513
+    }
+  },
+  "metrics": {
+    "horizon_hours": 24.0,
+    "isolation_forest": {
+      "roc_auc": 0.9739,
+      "pr_auc": 0.6878,
+      "brier_score": 0.0389,
+      "at_warning": {
+        "precision": 0.7327,
+        "recall": 0.508,
+        "f1": 0.6,
+        "false_positive_rate": 0.0147
+      },
+      "at_critical": {
+        "precision": 0.6807,
+        "recall": 0.2637,
+        "f1": 0.3801,
+        "false_positive_rate": 0.0098
+      },
+      "failures_anticipated_pct": 75.0,
+      "median_lead_time_hours": 17.5
+    },
+    "comparison": {
+      "local_outlier_factor_roc_auc": 0.4643,
+      "static_threshold": {
+        "rule": "temperatura >= 80.0 °C",
+        "roc_auc": 0.7426,
+        "precision": 1.0,
+        "recall": 0.0805,
+        "f1": 0.1489,
+        "false_positive_rate": 0.0,
+        "failures_anticipated_pct": 45.8
+      }
+    },
+    "random_forest": {
+      "macro_f1": 0.8345,
+      "accuracy": 0.9691,
+      "per_class_f1": {
+        "DUST_OBSTRUCTION": 0.6708,
+        "FAN_WEAR": 0.9406,
+        "GPU_DEGRADATION": 0.8077,
+        "NORMAL": 0.9888,
+        "PSU_INSTABILITY": 0.9429,
+        "THERMAL_PASTE": 0.6562
+      }
+    }
+  },
+  "feature_stats": {
+    "temperature": {
+      "mean": 68.52725049113792,
+      "std": 2.0013090212194418
+    },
+    "power_kw": {
+      "mean": 1.3690671682390276,
+      "std": 0.04741282205657307
+    },
+    "fan_rpm": {
+      "mean": 2090.914682325511,
+      "std": 113.73779393454275
+    },
+    "hashrate": {
+      "mean": 577.3650886207121,
+      "std": 20.48683978560746
+    },
+    "efficiency": {
+      "mean": 422.1516544690639,
+      "std": 19.3077327788701
+    },
+    "rpm_per_deg": {
+      "mean": 30.530275594762948,
+      "std": 1.7409453396307746
+    },
+    "temp_slope": {
+      "mean": 0.0076225444424605545,
+      "std": 0.1433827052090915
+    },
+    "rpm_slope": {
+      "mean": 0.0463796797749754,
+      "std": 4.001471238051193
+    },
+    "power_slope": {
+      "mean": 0.0004699680988686165,
+      "std": 0.00751878202634973
+    },
+    "hash_slope": {
+      "mean": 0.24862417746758023,
+      "std": 4.194472907046721
+    },
+    "temp_std": {
+      "mean": 1.015913086788704,
+      "std": 0.5369410590671013
+    },
+    "rpm_std": {
+      "mean": 39.55664980150647,
+      "std": 11.541252354133304
+    },
+    "power_std": {
+      "mean": 0.01970444808887417,
+      "std": 0.03831643525820959
+    },
+    "hash_std": {
+      "mean": 9.39768681125479,
+      "std": 22.114073644189837
+    },
+    "hash_drop_pct": {
+      "mean": 0.018503905051834718,
+      "std": 0.025255105308690587
+    }
+  },
+  "feature_importances": {
+    "fan_rpm": 0.13249049510924527,
+    "rpm_std": 0.12747230083351038,
+    "rpm_per_deg": 0.12287969350235985,
+    "power_std": 0.11061833240590838,
+    "hashrate": 0.09697849472393454,
+    "hash_std": 0.09619550885975514,
+    "temperature": 0.08396784337977445,
+    "efficiency": 0.07449137423321558,
+    "power_kw": 0.0499394458608382,
+    "hash_drop_pct": 0.022020774026687957,
+    "rpm_slope": 0.0215683339572181,
+    "power_slope": 0.02080526945621187,
+    "hash_slope": 0.015068213137896629,
+    "temp_std": 0.014972866863115337,
+    "temp_slope": 0.010531053650328429
+  },
+  "classes": [
+    "DUST_OBSTRUCTION",
+    "FAN_WEAR",
+    "GPU_DEGRADATION",
+    "NORMAL",
+    "PSU_INSTABILITY",
+    "THERMAL_PASTE"
+  ],
+  "sha256": {
+    "isolation_forest.pkl": "6bca133f254a3f237bfc4f8ec5b637fc1c544e7bf1a5e15f9412bae37c108b0e",
+    "random_forest.pkl": "acb46a12ec892cbf9932cadbbe53d7e9a20c3bb4f27bac8312cb9d258fda8a51"
+  },
+  "training_seconds": 176.8
+}
