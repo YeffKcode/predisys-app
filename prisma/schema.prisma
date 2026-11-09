@@ -1,0 +1,430 @@
+// PrediSys · Esquema relacional (MySQL local o Amazon RDS MySQL)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════ IDENTIDAD Y ACCESO ═══════════════════
+
+model User {
+  id                  String    @id @default(uuid()) @db.Char(36)
+  username            String    @unique @db.VarChar(40)
+  // El correo se guarda cifrado (AES-256-GCM); emailHash (HMAC-SHA256) permite búsqueda y unicidad
+  emailHash           String    @unique @map("email_hash") @db.Char(64)
+  emailEnc            String    @map("email_enc") @db.Text
+  fullNameEnc         String?   @map("full_name_enc") @db.Text
+  passwordHash        String    @map("password_hash") @db.VarChar(100)
+  isActive            Boolean   @default(true) @map("is_active")
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+  passwordChangedAt   DateTime  @default(now()) @map("password_changed_at")
+  lastLoginAt         DateTime? @map("last_login_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  roles       UserRole[]
+  sessions    Session[]
+  resetTokens PasswordResetToken[]
+  auditLogs   AuditLog[]
+  attachments Attachment[]
+
+  alertsAcknowledged     Alert[]                 @relation("AlertAcknowledgedBy")
+  alertsResolved         Alert[]                 @relation("AlertResolvedBy")
+  notifications          AlertNotification[]
+  notificationPreference NotificationPreference?
+  faultInjections        FaultInjection[]
+
+  @@map("users")
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(255)
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          Int    @id @default(autoincrement())
+  key         String @unique @db.VarChar(60)
+  description String @db.VarChar(255)
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId     String   @map("user_id") @db.Char(36)
+  roleId     Int      @map("role_id")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  assignedBy String?  @map("assigned_by") @db.Char(36)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       Int @map("role_id")
+  permissionId Int @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// Sesiones del lado servidor: permiten concurrencia independiente, revocación y expiración por inactividad
+model Session {
+  id             String    @id @default(uuid()) @db.Char(36)
+  userId         String    @map("user_id") @db.Char(36)
+  ip             String?   @db.VarChar(64)
+  userAgent      String?   @map("user_agent") @db.VarChar(255)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  lastActivityAt DateTime  @default(now()) @map("last_activity_at")
+  expiresAt      DateTime  @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+  revokedReason  String?   @map("revoked_reason") @db.VarChar(40)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Char(36)
+  userId    String    @map("user_id") @db.Char(36)
+  codeHash  String    @map("code_hash") @db.VarChar(100)
+  expiresAt DateTime  @map("expires_at")
+  attempts  Int       @default(0)
+  usedAt    DateTime? @map("used_at")
+  ip        String?   @db.VarChar(64)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@map("password_reset_tokens")
+}
+
+model AuditLog {
+  id            Int      @id @default(autoincrement())
+  actorId       String?  @map("actor_id") @db.Char(36)
+  actorUsername String?  @map("actor_username") @db.VarChar(40)
+  action        String   @db.VarChar(80)
+  entity        String?  @db.VarChar(40)
+  entityId      String?  @map("entity_id") @db.VarChar(64)
+  ip            String?  @db.VarChar(64)
+  userAgent     String?  @map("user_agent") @db.VarChar(255)
+  details       Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  key       String   @id @db.VarChar(60)
+  value     String   @db.VarChar(255)
+  updatedBy String?  @map("updated_by") @db.Char(36)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+// ═══════════════════ FLOTA Y TELEMETRÍA ═══════════════════
+
+enum MachineStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+}
+
+enum ComponentType {
+  GPU
+  PSU
+  COOLING
+  MOTHERBOARD
+  OTHER
+}
+
+enum ComponentStatus {
+  ACTIVE
+  DEGRADED
+  FAILED
+  REPLACED
+}
+
+model Machine {
+  id        String        @id @default(uuid()) @db.Char(36)
+  code      String        @unique @db.VarChar(20)
+  name      String        @db.VarChar(80)
+  location  String?       @db.VarChar(120)
+  status    MachineStatus @default(ONLINE)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  components  Component[]
+  telemetry   TelemetryLog[]
+  attachments Attachment[]
+  alerts      Alert[]
+  injections  FaultInjection[]
+
+  @@map("machines")
+}
+
+model Component {
+  id           String          @id @default(uuid()) @db.Char(36)
+  machineId    String          @map("machine_id") @db.Char(36)
+  type         ComponentType
+  model        String          @db.VarChar(100)
+  serialNumber String?         @map("serial_number") @db.VarChar(60)
+  specs        Json?
+  status       ComponentStatus @default(ACTIVE)
+  installedAt  DateTime        @default(now()) @map("installed_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  machine Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@index([machineId])
+  @@map("components")
+}
+
+model TelemetryLog {
+  id                  Int      @id @default(autoincrement())
+  machineId           String   @map("machine_id") @db.Char(36)
+  recordedAt          DateTime @default(now()) @map("recorded_at")
+  temperature         Float
+  powerKw             Float    @map("power_kw")
+  fanRpm              Int      @map("fan_rpm")
+  hashrate            Float
+  // Isolation Forest
+  anomalyScore        Float?   @map("anomaly_score")
+  failureProbability  Float?   @map("failure_probability")
+  isAnomaly           Boolean? @map("is_anomaly")
+  // Random Forest
+  diagnosis           String?  @db.VarChar(120)
+  diagnosisConfidence Float?   @map("diagnosis_confidence")
+  // Lecturas generadas por el laboratorio de fallas (se pueden purgar sin tocar datos reales)
+  isSynthetic         Boolean  @default(false) @map("is_synthetic")
+  injectionId         String?  @map("injection_id") @db.Char(36)
+
+  machine Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  alerts  Alert[]
+
+  @@index([machineId, recordedAt])
+  @@map("telemetry_logs")
+}
+
+model Attachment {
+  id           String   @id @default(uuid()) @db.Char(36)
+  machineId    String?  @map("machine_id") @db.Char(36)
+  uploadedById String?  @map("uploaded_by_id") @db.Char(36)
+  originalName String   @map("original_name") @db.VarChar(255)
+  storedName   String   @unique @map("stored_name") @db.VarChar(80)
+  mimeType     String   @map("mime_type") @db.VarChar(80)
+  sizeBytes    Int      @map("size_bytes")
+  sha256       String   @db.Char(64)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  machine    Machine? @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([machineId])
+  @@map("attachments")
+}
+
+// ═══════════════════ ALERTAS, NOTIFICACIONES Y TRAZABILIDAD ═══════════════════
+
+enum AlertSeverity {
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum ChainStatus {
+  NOT_REQUIRED // advertencias: no se anclan
+  DISABLED     // blockchain apagado por configuración
+  PENDING
+  SUBMITTING
+  SUBMITTED    // transacción enviada, esperando confirmación
+  CONFIRMED
+  FAILED
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+// Bitácora de alertas. Los campos marcados (H) forman el registro canónico cuyo hash se ancla en la Testnet.
+// Si la máquina se elimina, la alerta permanece (machineId = NULL, machineCode conservado) por auditoría.
+model Alert {
+  id                  String        @id @db.Char(36)                                  // (H)
+  machineId           String?       @map("machine_id") @db.Char(36)
+  machineCode         String        @map("machine_code") @db.VarChar(20)              // (H)
+  telemetryId         Int?          @map("telemetry_id")                              // (H)
+  severity            AlertSeverity                                                   // (H)
+  status              AlertStatus   @default(OPEN)
+  failureProbability  Float         @map("failure_probability")                       // (H)
+  anomalyScore        Float?        @map("anomaly_score")                             // (H)
+  diagnosis           String?       @db.VarChar(120)                                  // (H)
+  diagnosisConfidence Float?        @map("diagnosis_confidence")
+  variables           Json                                                            // (H) las 4 variables críticas
+  contributingFactors Json?         @map("contributing_factors")
+  recommendation      String?       @db.VarChar(255)
+  modelVersion        String?       @map("model_version") @db.VarChar(20)
+  recordedAt          DateTime      @map("recorded_at")                               // (H)
+  createdAt           DateTime      @default(now()) @map("created_at")                // (H)
+  occurrences         Int           @default(1)
+  lastSeenAt          DateTime      @default(now()) @map("last_seen_at")
+  acknowledgedById    String?       @map("acknowledged_by_id") @db.Char(36)
+  acknowledgedAt      DateTime?     @map("acknowledged_at")
+  resolvedById        String?       @map("resolved_by_id") @db.Char(36)
+  resolvedAt          DateTime?     @map("resolved_at")
+  resolutionNote      String?       @map("resolution_note") @db.VarChar(500)
+  escalatedAt         DateTime?     @map("escalated_at")
+  isTest              Boolean       @default(false) @map("is_test")  // generada por inyección de falla de prueba
+  injectionId         String?       @map("injection_id") @db.Char(36)
+
+  recordHash         String      @map("record_hash") @db.Char(64)
+  chainStatus        ChainStatus @default(PENDING) @map("chain_status")
+  chainNetwork       String?     @map("chain_network") @db.VarChar(40)
+  chainTxHash        String?     @map("chain_tx_hash") @db.VarChar(66)
+  chainBlockNumber   Int?        @map("chain_block_number")
+  chainAttempts      Int         @default(0) @map("chain_attempts")
+  chainError         String?     @map("chain_error") @db.VarChar(255)
+  chainNextAttemptAt DateTime?   @map("chain_next_attempt_at")
+  chainUpdatedAt     DateTime?   @map("chain_updated_at")
+  anchoredAt         DateTime?   @map("anchored_at")
+
+  machine        Machine?            @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  telemetry      TelemetryLog?       @relation(fields: [telemetryId], references: [id], onDelete: SetNull)
+  acknowledgedBy User?               @relation("AlertAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  resolvedBy     User?               @relation("AlertResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  notifications  AlertNotification[]
+
+  @@index([machineId, status, createdAt])
+  @@index([createdAt])
+  @@index([chainStatus, chainNextAttemptAt])
+  @@index([status, severity])
+  @@map("alerts")
+}
+
+model AlertNotification {
+  id                Int                 @id @default(autoincrement())
+  alertId           String              @map("alert_id") @db.Char(36)
+  userId            String?             @map("user_id") @db.Char(36)
+  channel           NotificationChannel
+  recipientEnc      String              @map("recipient_enc") @db.Text  // cifrado para poder reintentar
+  recipientMasked   String              @map("recipient_masked") @db.VarChar(80)
+  isEscalation      Boolean             @default(false) @map("is_escalation")
+  status            NotificationStatus  @default(PENDING)
+  attempts          Int                 @default(0)
+  providerMessageId String?             @map("provider_message_id") @db.VarChar(120)
+  error             String?             @db.VarChar(255)
+  nextAttemptAt     DateTime?           @map("next_attempt_at")
+  sentAt            DateTime?           @map("sent_at")
+  createdAt         DateTime            @default(now()) @map("created_at")
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([alertId])
+  @@index([status, nextAttemptAt])
+  @@map("alert_notifications")
+}
+
+model NotificationPreference {
+  userId          String        @id @map("user_id") @db.Char(36)
+  emailEnabled    Boolean       @default(true) @map("email_enabled")
+  smsEnabled      Boolean       @default(false) @map("sms_enabled")
+  minSeverity     AlertSeverity @default(CRITICAL) @map("min_severity")
+  // Horario silencioso (hora local NOTIFY_TIMEZONE): suprime SMS de ADVERTENCIA; las CRÍTICAS siempre llegan
+  quietHoursStart Int?          @map("quiet_hours_start")
+  quietHoursEnd   Int?          @map("quiet_hours_end")
+  phoneEnc        String?       @map("phone_enc") @db.Text
+  phoneLast4      String?       @map("phone_last4") @db.VarChar(4)
+  phoneVerifiedAt DateTime?     @map("phone_verified_at")
+  pendingPhoneEnc String?       @map("pending_phone_enc") @db.Text
+  phoneCodeHash   String?       @map("phone_code_hash") @db.VarChar(100)
+  phoneCodeExpiry DateTime?     @map("phone_code_expiry")
+  phoneCodeTries  Int           @default(0) @map("phone_code_tries")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+// ═══════════════════ LABORATORIO DE FALLAS DE PRUEBA ═══════════════════
+
+enum FaultType {
+  THERMAL_PASTE
+  FAN_WEAR
+  PSU_INSTABILITY
+  GPU_DEGRADATION
+  DUST_OBSTRUCTION
+}
+
+model FaultInjection {
+  id                 String    @id @default(uuid()) @db.Char(36)
+  machineId          String?   @map("machine_id") @db.Char(36)
+  machineCode        String    @map("machine_code") @db.VarChar(20)
+  createdById        String?   @map("created_by_id") @db.Char(36)
+  createdByUsername  String?   @map("created_by_username") @db.VarChar(40)
+  faultType          FaultType @map("fault_type")
+  intensity          String    @db.VarChar(10)
+  steps              Int
+  notify             Boolean   @default(false)
+  status             String    @db.VarChar(12)
+  results            Json?
+  maxProbability     Float?    @map("max_probability")
+  firstWarningStep   Int?      @map("first_warning_step")
+  firstCriticalStep  Int?      @map("first_critical_step")
+  finalDiagnosisCode String?   @map("final_diagnosis_code") @db.VarChar(40)
+  diagnosisMatched   Boolean?  @map("diagnosis_matched")
+  alertsCreated      Int       @default(0) @map("alerts_created")
+  error              String?   @db.VarChar(255)
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  machine   Machine? @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([machineId, createdAt])
+  @@map("fault_injections")
+}
